@@ -2,7 +2,10 @@
   "title": "Ship Names",
   "tagline": "Every ship needs a name. Preferably a long one.",
   "blurb": "A dry party game for two to eight. Each round puts a ship in an awkward situation. Everyone names the ship, the names are shown with no authors, and you vote for the best one that is not yours. Five rounds, then the winning names enter the fleet registry.",
-  "status": "draft",
+  "status": "published",
   "updated": "2026-11-11",
-  "source": "https://github.com/cyborg-garden/ship-names"
+  "source": "https://github.com/cyborg-garden/ship-names",
+  "surfaces": [
+    "discord"
+  ]
 }
