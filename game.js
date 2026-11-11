@@ -39,6 +39,7 @@
   var editing = false;  // changing a name already sent this round
   var draft = '';       // what is in the name box, kept across redraws
   var draftRound = -1;
+  var sentName = false; // a name has gone to the server from the open name box
   var endsAt = null;    // local time the current phase ends
   var phaseTotal = 0;   // longest time seen for this phase, for the bar
   var timedKey = '';
@@ -192,10 +193,19 @@
     room = window.ArcadeRooms.connect(GAME, {
       name: name,
       onView: function (msg) {
+        if (!live) return;
         last = msg;
         render();
       },
-      onStatus: function (state) { if (live) setStatus(state); },
+      onStatus: function (state) {
+        if (!live) return;
+        setStatus(state);
+        if (state === 'elsewhere') {
+          // Another tab took this seat. That is final: no retry, no spinner.
+          live = false;
+          showElsewhere();
+        }
+      },
       onError: function (text) {
         live = false;
         // The server turned the hello away (room full, or no usable name).
@@ -210,6 +220,25 @@
         showJoin();
       },
     });
+  }
+
+  function showElsewhere() {
+    room = null;
+    last = null;
+    update = null;
+    screenKey = 'elsewhere';
+    endsAt = null;
+    drawClock();
+    app.setAttribute('data-screen', 'elsewhere');
+    crewBar.hidden = true;
+    roundLine.textContent = '';
+    clear(stage);
+    var box = el('div', 'hello');
+    add(box,
+      el('p', 'lead', 'This game is open in another tab.'),
+      el('p', 'sub', 'Carry on there. This tab has stepped aside and will not reconnect.'));
+    stage.appendChild(box);
+    announce.textContent = 'This game is open in another tab.';
   }
 
   /** So a reload in the middle of a game walks straight back in. */
@@ -230,7 +259,10 @@
   }
 
   function setStatus(state) {
-    var words = { connecting: 'Connecting', open: 'Connected', closed: 'Connection lost', idle: '' };
+    var words = {
+      connecting: 'Connecting', open: 'Connected', closed: 'Connection lost',
+      elsewhere: 'Open in another tab', idle: '',
+    };
     statusLine.setAttribute('data-state', state);
     statusLine.textContent = words[state] || '';
   }
@@ -255,6 +287,11 @@
       editing = false;
     }
     if (v.phase !== 'write') editing = false;
+    // The name box closes once the server has answered the name it was sent
+    // without a complaint.
+    var mine = v.you || {};
+    if (editing && sentName && !mine.problem) editing = false;
+    if (!editing) sentName = false;
 
     var key = keyOf(v);
     if (key !== screenKey) {
@@ -323,7 +360,7 @@
   function drawCrew(v) {
     crewBar.hidden = false;
     clear(crewBar);
-    var doneWord = { write: 'named', vote: 'voted', reveal: 'ready' }[v.phase] || '';
+    var doneWord = { write: 'named', vote: 'voted', reveal: 'ready', final: 'again' }[v.phase] || '';
     for (var i = 0; i < v.crew.length; i++) {
       var p = v.crew[i];
       var node = el('div', 'seat' + (p.id === last.you ? ' you' : '') + (p.connected ? '' : ' away'));
@@ -401,6 +438,7 @@
       add(plate, el('p', 'eyebrow', 'Your ship'), el('p', 'hull', you.text));
       var change = button('Change it', 'quiet', function () {
         editing = true;
+        sentName = false;
         draft = you.text;
         render();
       });
@@ -410,39 +448,66 @@
       form.noValidate = true;
       var label = el('label', 'sr-only', 'Name this ship');
       label.htmlFor = 'ship-name';
-      var input = el('input', 'field hull');
+      // Two lines, so a long name can be read whole on a phone. Enter sends.
+      var input = el('textarea', 'field hull');
       input.id = 'ship-name';
-      input.type = 'text';
+      input.rows = 2;
       input.maxLength = v.nameLength;
       input.autocomplete = 'off';
       input.spellcheck = true;
       input.setAttribute('enterkeyhint', 'send');
       input.setAttribute('data-first', '');
+      input.setAttribute('aria-describedby', 'ship-name-count ship-name-problem');
       input.placeholder = 'Name this ship. Say, ' + EXAMPLES[v.round % EXAMPLES.length];
       input.value = draft;
       var submit = el('button', 'btn', 'Name it');
       submit.type = 'submit';
       var count = el('p', 'count');
+      count.id = 'ship-name-count';
+      var problem = el('p', 'error');
+      problem.id = 'ship-name-problem';
+      problem.setAttribute('role', 'alert');
+      problem.hidden = true;
       var tally = function () {
         draft = input.value;
         count.textContent = (v.nameLength - Array.from(input.value).length) + ' characters left';
         submit.disabled = !input.value.trim();
       };
-      input.addEventListener('input', tally);
-      tally();
-      form.addEventListener('submit', function (event) {
-        event.preventDefault();
+      var sendName = function () {
         var text = input.value.replace(/\s+/g, ' ').trim();
         if (!text) return;
         draft = text;
+        sentName = true;
         send({ type: 'name', text: text });
-        if (editing) {
-          editing = false;
-          render();
+      };
+      input.addEventListener('input', function () {
+        // A pasted line break would otherwise sit in the box unseen.
+        if (/[\r\n]/.test(input.value)) input.value = input.value.replace(/[\r\n]+/g, ' ');
+        tally();
+      });
+      input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.isComposing) {
+          event.preventDefault();
+          sendName();
         }
       });
-      add(form, label, add(el('div', 'row'), input, submit), count);
+      tally();
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        sendName();
+      });
+      add(form, label, add(el('div', 'row stack'), input, submit), count, problem);
       box.appendChild(form);
+      stage.appendChild(box);
+      return function (now) {
+        // The server refused the last name sent. Say why, in the same place.
+        var why = now.you && now.you.problem;
+        var words = why === 'empty' ? 'That name came out empty. It needs at least one letter or mark that shows.'
+          : why === 'long' ? 'That name is too long. ' + now.nameLength + ' characters is the limit.'
+          : '';
+        if (problem.textContent !== words) problem.textContent = words;
+        problem.hidden = !words;
+      };
     }
     stage.appendChild(box);
     return null;
@@ -498,7 +563,7 @@
         var item = el('div', 'entry' + (entry.top ? ' top' : ''));
         var meta = el('p', 'meta');
         var who = el('span', 'who');
-        add(who, ship(author ? author.ship : 0, 30), el('span', '', author ? author.name : 'Someone'));
+        add(who, author ? ship(author.ship, 30) : null, el('span', '', author ? author.name : entry.name));
         meta.appendChild(who);
         meta.appendChild(el('span', '', entry.votes === 0 ? 'no votes' : plural(entry.votes, 'vote', 'votes') +
           ', +' + entry.votes));
@@ -536,10 +601,11 @@
   BUILD.final = function (v) {
     var wrap = el('div');
     var again = button('Play again', '', function () { send({ type: 'again' }); });
+    var againNote = el('p', 'note');
     add(wrap, add(el('div', 'head'),
       add(el('div'),
         el('h2', 'title', 'Fleet registry'),
-        el('p', 'note', 'The names that won their rounds, entered for good.')),
+        againNote),
       again));
 
     var cols = el('div', 'final');
@@ -567,7 +633,7 @@
         var item = el('div', 'entry top');
         var meta = el('p', 'meta');
         var who = el('span', 'who');
-        add(who, ship(author ? author.ship : 0, 30), el('span', '', author ? author.name : 'Someone'));
+        add(who, author ? ship(author.ship, 30) : null, el('span', '', author ? author.name : row.name));
         add(meta, who, el('span', '', 'Round ' + row.round + ', ' + plural(row.votes, 'vote', 'votes')));
         add(item, el('p', 'hull', row.text), meta, el('p', 'why', row.situation));
         list.appendChild(add(el('li'), item));
@@ -578,7 +644,18 @@
     add(cols, standings, registry);
     wrap.appendChild(cols);
     stage.appendChild(wrap);
-    return null;
+
+    return function (now) {
+      var me = seat(now, last.you);
+      var asked = !!(me && me.done);
+      var ask = now.again || { have: 0, need: 1 };
+      again.disabled = asked;
+      againNote.textContent =
+        asked ? 'You asked for another game. It starts when one more player agrees.' :
+        ask.have > 0 ? 'Someone has asked for another game. Press Play again to agree.' :
+        ask.need > 1 ? 'The names that won their rounds. A new game takes two players asking.' :
+        'The names that won their rounds, entered for good.';
+    };
   };
 
   // ---------- go ----------

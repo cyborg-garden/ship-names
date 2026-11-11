@@ -11,6 +11,9 @@ five rounds the winning names are entered in the fleet registry.
 
 Two can play. Three or more is better. Eight is the most a room holds.
 
+A new game from the final board takes two players asking for it, so one
+person cannot clear the board while the rest are still reading it.
+
 ## What is in here
 
 This folder is only the browser client. The rules, the timers and the
