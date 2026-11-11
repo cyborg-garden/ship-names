@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Ship Names</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app" data-screen="join">
+  <header class="bar">
+    <h1 class="mark">Ship Names</h1>
+    <p class="round" id="round"></p>
+    <p class="clock" id="clock" hidden><span id="clock-num">0</span><span class="clock-unit"> s</span></p>
+    <p class="status" id="status" role="status" data-state="idle"></p>
+  </header>
+  <div class="timebar" aria-hidden="true"><i id="timebar"></i></div>
+  <main class="stage" id="stage" tabindex="-1"></main>
+  <footer class="crew" id="crew" aria-label="Crew and scores" hidden></footer>
+  <p class="sr-only" id="announce" aria-live="polite"></p>
+</div>
+<noscript><p class="noscript">Ship Names needs JavaScript to run.</p></noscript>
+<script src="config.js"></script>
+<script src="rooms-client.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
